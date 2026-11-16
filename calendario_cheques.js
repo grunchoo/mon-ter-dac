@@ -70,7 +70,10 @@
 
     // --- Ciclo de vida de SAC ---
     onCustomWidgetBeforeUpdate(changedProperties) {
-      this._props = { ...this._props, ...changedProperties };
+      // SAC puede pasar el data binding en changedProperties o como propiedad del elemento
+      if (changedProperties && changedProperties.myDataBinding) this.myDataBinding = changedProperties.myDataBinding;
+      const { myDataBinding, ...resto } = changedProperties || {};
+      this._props = { ...this._props, ...resto };
     }
     onCustomWidgetAfterUpdate(changedProperties) {
       this._render();
@@ -86,17 +89,20 @@
     // --- Datos ---
     _leerDatos() {
       const db = this.myDataBinding;
-      if (!db || db.state !== "success" || !db.data) return null;
+      if (!db) return null;
+      if (db.state && db.state !== "success") return { estado: db.state };
+      if (!db.data) return null;
       const feeds = (db.metadata && db.metadata.feeds) || {};
       const dimKey = (feeds.dimensions && feeds.dimensions.values && feeds.dimensions.values[0]) || "dimensions_0";
       const meaKey = (feeds.measures && feeds.measures.values && feeds.measures.values[0]) || "measures_0";
       const porDia = new Map();
+      this._diag = { filas: db.data.length, sinFecha: 0, ejemplo: "" };
       for (const fila of db.data) {
         const dim = fila[dimKey];
         const mea = fila[meaKey];
         if (!dim || !mea) continue;
         const f = aFecha(dim.id) || aFecha(dim.label);
-        if (!f) continue;
+        if (!f) { this._diag.sinFecha++; if (!this._diag.ejemplo) this._diag.ejemplo = `${dim.id} / ${dim.label}`; continue; }
         const k = clave(f);
         porDia.set(k, (porDia.get(k) || 0) + (Number(mea.raw) || 0));
       }
@@ -108,8 +114,10 @@
       const $ = id => this._shadow.getElementById(id);
       $("titulo").textContent = this._props.titulo || "";
       const porDia = this._leerDatos();
-      if (!porDia) {
-        $("cuerpo").innerHTML = `<div class="vacio">Asigná en el panel de datos: Fecha de vencimiento (dimensión) e Importe (medida).</div>`;
+      if (!porDia || porDia.estado) {
+        $("cuerpo").innerHTML = porDia && porDia.estado === "loading"
+          ? `<div class="vacio">Cargando datos…</div>`
+          : `<div class="vacio">Asigná en el panel de datos: Fecha de vencimiento (dimensión) e Importe (medida).${porDia ? ` (estado: ${porDia.estado})` : ""}</div>`;
         $("ley").innerHTML = "";
         return;
       }
@@ -119,6 +127,16 @@
 
       let max = 0;
       for (const v of porDia.values()) max = Math.max(max, Math.abs(v));
+
+      // Diagnóstico: cuántos datos llegaron y si caen dentro del rango visible
+      const fin = new Date(inicio); fin.setDate(inicio.getDate() + 7 * nSem);
+      const claves = [...porDia.keys()].sort();
+      const enRango = claves.filter(k => k >= clave(inicio) && k < clave(fin)).length;
+      const d = this._diag || {};
+      let aviso = "";
+      if (d.filas === 0) aviso = "El modelo no devolvió filas (revisá los filtros del widget).";
+      else if (d.sinFecha && !claves.length) aviso = `No reconozco el formato de fecha. Ejemplo recibido: ${d.ejemplo}`;
+      else if (claves.length && !enRango) aviso = `Hay ${claves.length} días con datos, entre ${claves[0]} y ${claves[claves.length - 1]}, pero ninguno cae en el rango visible (${clave(inicio)} a ${clave(fin)}).`;
 
       let html = `<table><thead><tr><th class="sem">Semana</th>${DIAS.map(d => `<th>${d}</th>`).join("")}<th class="tot">Total</th></tr></thead><tbody>`;
       for (let s = 0; s < nSem; s++) {
@@ -139,7 +157,7 @@
         html += `<tr><td class="sem">${ini.toLocaleDateString("es-AR", { day: "2-digit", month: "short" })}</td>${celdas}<td class="tot">${tot ? abrev(tot) : "–"}</td></tr>`;
       }
       html += "</tbody></table>";
-      $("cuerpo").innerHTML = html;
+      $("cuerpo").innerHTML = (aviso ? `<div class="vacio">${aviso}</div>` : "") + html;
       $("ley").innerHTML = `<span>0</span><span class="b" style="background:linear-gradient(90deg, ${mezclar(this._props.colorAlto, .15)}, ${this._props.colorAlto})"></span><span>${abrev(max)}</span><span style="margin-left:12px">Borde azul = hoy</span>`;
 
       $("cuerpo").querySelectorAll("td.dia").forEach(td => td.addEventListener("click", () => {
