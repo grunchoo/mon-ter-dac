@@ -96,7 +96,9 @@
       const dimKey = (feeds.dimensions && feeds.dimensions.values && feeds.dimensions.values[0]) || "dimensions_0";
       const meaKey = (feeds.measures && feeds.measures.values && feeds.measures.values[0]) || "measures_0";
       const porDia = new Map();
-      this._diag = { filas: db.data.length, sinFecha: 0, ejemplo: "" };
+      this._diag = { filas: db.data.length, sinFecha: 0, ejemplo: "",
+                     muestra: JSON.stringify(db.data[0] || {}).slice(0, 400),
+                     feeds: JSON.stringify(feeds).slice(0, 300) };
       for (const fila of db.data) {
         const dim = fila[dimKey];
         const mea = fila[meaKey];
@@ -136,6 +138,7 @@
       let aviso = "";
       if (d.filas === 0) aviso = "El modelo no devolvió filas (revisá los filtros del widget).";
       else if (d.sinFecha && !claves.length) aviso = `No reconozco el formato de fecha. Ejemplo recibido: ${d.ejemplo}`;
+      else if (max === 0) aviso = `Llegaron ${d.filas} filas pero no pude leer fecha/importe. Pasale esto a Claude → fila: ${d.muestra} · feeds: ${d.feeds}`;
       else if (claves.length && !enRango) aviso = `Hay ${claves.length} días con datos, entre ${claves[0]} y ${claves[claves.length - 1]}, pero ninguno cae en el rango visible (${clave(inicio)} a ${clave(fin)}).`;
 
       let html = `<table><thead><tr><th class="sem">Semana</th>${DIAS.map(d => `<th>${d}</th>`).join("")}<th class="tot">Total</th></tr></thead><tbody>`;
@@ -158,7 +161,7 @@
       }
       html += "</tbody></table>";
       $("cuerpo").innerHTML = (aviso ? `<div class="vacio">${aviso}</div>` : "") + html;
-      $("ley").innerHTML = `<span>0</span><span class="b" style="background:linear-gradient(90deg, ${mezclar(this._props.colorAlto, .15)}, ${this._props.colorAlto})"></span><span>${abrev(max)}</span><span style="margin-left:12px">Borde azul = hoy</span>`;
+      $("ley").innerHTML = `<span>0</span><span class="b" style="background:linear-gradient(90deg, ${mezclar(this._props.colorAlto, .15)}, ${this._props.colorAlto})"></span><span>${abrev(max)}</span><span style="margin-left:12px">Borde azul = hoy</span><span style="margin-left:auto;opacity:.5">v1.0.2</span>`;
 
       $("cuerpo").querySelectorAll("td.dia").forEach(td => td.addEventListener("click", () => {
         this.diaSeleccionado = td.dataset.k;
